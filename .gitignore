@@ -1,0 +1,9 @@
+*.dcu
+*.exe
+*.identcache
+*.dproj.local
+*.res
+*.local
+__history/
+__recovery/
+.codex
