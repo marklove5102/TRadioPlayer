@@ -169,6 +169,9 @@ const
 {$IFDEF MACOS}
   AVERROR_EAGAIN          =  -35; ///< Resource temporarily unavailable / Try again
 {$ENDIF}
+{$IFDEF LINUX}
+  AVERROR_EAGAIN          =  -11; ///< Resource temporarily unavailable / Try again
+{$ENDIF}
   AVERROR_ENOMEM          =  -12; ///< Not enough space / Out of memory
   AVERROR_EACCES          =  -13; ///< Permission denied
   AVERROR_EFAULT          =  -14; ///< Bad address
@@ -198,6 +201,9 @@ const
 {$IFDEF MACOS}
   AVERROR_EDEADLK         =  -11; ///< Resource deadlock avoided
 {$ENDIF}
+{$IFDEF LINUX}
+  AVERROR_EDEADLK         =  -35; ///< Resource deadlock avoided
+{$ENDIF}
 {$IFDEF MSWINDOWS}
   AVERROR_ENAMETOOLONG    =  -38; ///< File name too long
   AVERROR_ENOLCK          =  -39; ///< No locks available
@@ -211,6 +217,13 @@ const
   AVERROR_ENOSYS          =  -78; ///< Function not implemented
   AVERROR_ENOTEMPTY       =  -66; ///< Directory not empty
   AVERROR_ELOOP           =  -62; ///< Too many symbolic links encountered
+{$ENDIF}
+{$IFDEF LINUX}
+  AVERROR_ENAMETOOLONG    =  -36; ///< File name too long
+  AVERROR_ENOLCK          =  -37; ///< No locks available
+  AVERROR_ENOSYS          =  -38; ///< Function not implemented
+  AVERROR_ENOTEMPTY       =  -39; ///< Directory not empty
+  AVERROR_ELOOP           =  -40; ///< Too many symbolic links encountered
 {$ENDIF}
   AVERROR_ENOMSG          =  -91; ///< No message of desired type (WIN: Unknown error)
   AVERROR_EIDRM           =  -90; ///< Identifier removed (WIN: Unknown error)
@@ -254,6 +267,21 @@ const
   AVERROR_ESOCKTNOSUPPORT =  -44; ///< Socket type not supported
   AVERROR_EOPNOTSUPP      =  -45; ///< Operation not supported on transport endpoint
   AVERROR_EPFNOSUPPORT    =  -46; ///< Protocol family not supported
+{$ENDIF}
+{$IFDEF LINUX}
+  AVERROR_EPROTO          =  -71; ///< Protocol error
+  AVERROR_EOVERFLOW       =  -75; ///< Value too large for defined data type
+  AVERROR_EILSEQ          =  -84; ///< Illegal byte sequence
+  AVERROR_EUSERS          =  -87; ///< Too many users
+  AVERROR_ENOTSOCK        =  -88; ///< Socket operation on non-socket
+  AVERROR_EDESTADDRREQ    =  -89; ///< Destination address required
+  AVERROR_EMSGSIZE        =  -90; ///< Message too long
+  AVERROR_EPROTOTYPE      =  -91; ///< Protocol wrong type for socket
+  AVERROR_ENOPROTOOPT     =  -92; ///< Protocol not available
+  AVERROR_EPROTONOSUPPORT =  -93; ///< Protocol not supported
+  AVERROR_ESOCKTNOSUPPORT =  -94; ///< Socket type not supported
+  AVERROR_EOPNOTSUPP      =  -95; ///< Operation not supported on transport endpoint
+  AVERROR_EPFNOSUPPORT    =  -96; ///< Protocol family not supported
 {$ENDIF}
 {$IFDEF MSWINDOWS}
   AVERROR_EAFNOSUPPORT    = -102; ///< Address family not supported by protocol
@@ -304,6 +332,31 @@ const
   AVERROR_ECANCELED       =  -89; ///< Operation Canceled
   AVERROR_EOWNERDEAD      = -105; ///< Owner died
   AVERROR_ENOTRECOVERABLE = -104; ///< State not recoverable
+{$ENDIF}
+{$IFDEF LINUX}
+  AVERROR_EAFNOSUPPORT    =  -97; ///< Address family not supported by protocol
+  AVERROR_EADDRINUSE      =  -98; ///< Address already in use
+  AVERROR_EADDRNOTAVAIL   =  -99; ///< Cannot assign requested address
+  AVERROR_ENETDOWN        = -100; ///< Network is down
+  AVERROR_ENETUNREACH     = -101; ///< Network is unreachable
+  AVERROR_ENETRESET       = -102; ///< Network dropped connection because of reset
+  AVERROR_ECONNABORTED    = -103; ///< Software caused connection abort
+  AVERROR_ECONNRESET      = -104; ///< Connection reset by peer
+  AVERROR_ENOBUFS         = -105; ///< No buffer space available
+  AVERROR_EISCONN         = -106; ///< Transport endpoint is already connected
+  AVERROR_ENOTCONN        = -107; ///< Transport endpoint is not connected
+  AVERROR_ESHUTDOWN       = -108; ///< Cannot send after transport endpoint shutdown
+  AVERROR_ETOOMANYREFS    = -109; ///< Too many references: cannot splice
+  AVERROR_ETIMEDOUT       = -110; ///< Connection timed out
+  AVERROR_ECONNREFUSED    = -111; ///< Connection refused
+  AVERROR_EHOSTDOWN       = -112; ///< Host is down
+  AVERROR_EHOSTUNREACH    = -113; ///< No route to host
+  AVERROR_EALREADY        = -114; ///< Operation already in progress
+  AVERROR_EINPROGRESS     = -115; ///< Operation now in progress
+  AVERROR_ESTALE          = -116; ///< Stale NFS file handle
+  AVERROR_ECANCELED       = -125; ///< Operation canceled
+  AVERROR_EOWNERDEAD      = -130; ///< Owner died
+  AVERROR_ENOTRECOVERABLE = -131; ///< State not recoverable
 {$ENDIF}
 {
   AVERROR_ECHRNG          =  -37; ///< Channel number out of range

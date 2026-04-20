@@ -3,22 +3,36 @@ unit Radio.ConsoleUI;
 interface
 
 uses
+{$IFDEF FPC}
+  BaseUnix,
+  Classes,
+  Generics.Collections,
+  Math,
+  SyncObjs,
+  StrUtils,
+  SysUtils,
+  Termio,
+{$ELSE}
   System.Classes,
   System.Generics.Collections,
   System.Math,
   System.SyncObjs,
   System.StrUtils,
   System.SysUtils,
-{$IF CompilerVersion >= 23.0}
+  {$IF CompilerVersion >= 23.0}
   Winapi.Windows,
-{$ELSE}
+  {$ELSE}
   Windows,
-{$IFEND}
+  {$IFEND}
+{$ENDIF}
   Radio.Logging,
+  Radio.Platform,
   Radio.Player,
   Radio.Types;
 
 type
+  TStringArray = array of string;
+
   TRadioConsoleUI = class;
 
   TRadioConsoleUIKeyEvent = procedure(Sender: TObject; Key: Word; Ch: Char;
@@ -37,12 +51,30 @@ type
     DEFAULT_RENDER_INTERVAL_MS = 100;
     MAX_LOG_LINES = 12;
     SPECTRUM_ROWS = 8;
+{$IFDEF FPC}
+    UNIX_STDIN_FD = 0;
+    UNIX_STDOUT_FD = 1;
+    KEY_ESCAPE = 27;
+    KEY_UP = 38;
+    KEY_DOWN = 40;
+    TIOCGWINSZ_IOCTL = 21523;
+{$ELSE}
+    KEY_ESCAPE = VK_ESCAPE;
+    KEY_UP = VK_UP;
+    KEY_DOWN = VK_DOWN;
+{$ENDIF}
   private
     FDeviceLabel: string;
     FFooterText: string;
+{$IFDEF FPC}
+    FInputFlags: LongInt;
+    FInputTermios: TTermios;
+    FInputTermiosValid: Boolean;
+{$ELSE}
     FInputHandle: THandle;
     FInputMode: DWORD;
-    FLastRenderedLines: TArray<string>;
+{$ENDIF}
+    FLastRenderedLines: TStringArray;
     FLastRenderTick: Cardinal;
     FLayoutWidth: Integer;
     FLock: TCriticalSection;
@@ -66,20 +98,23 @@ type
     function BoxLine(LeftChar, FillChar, RightChar: Char): string;
     function FormatDuration(Milliseconds: Cardinal): string;
     function PadRight(const Text: string; Width: Integer): string;
+{$IFDEF FPC}
+    function ReadUnixKey(out Key: Word; out Ch: Char): Boolean;
+{$ENDIF}
     function RenderLevelBar(Value: Single; Width: Integer): string;
     function RenderSpectrumRow(const Spectrum: TRadioSpectrumData; Row, Rows: Integer): string;
     function StateName(State: TRadioPlayerState): string;
     procedure AddLog(const Line: string);
     procedure ProcessKey(Key: Word; Ch: Char);
-    procedure RenderDiff(const Lines: TArray<string>);
-    procedure RenderFooter(var Lines: TArray<string>; var Index: Integer; const FooterText: string);
-    procedure RenderHeader(var Lines: TArray<string>; var Index: Integer; const State: TRadioPlayerState;
+    procedure RenderDiff(const Lines: TStringArray);
+    procedure RenderFooter(var Lines: TStringArray; var Index: Integer; const FooterText: string);
+    procedure RenderHeader(var Lines: TStringArray; var Index: Integer; const State: TRadioPlayerState;
       const Metadata: TStreamMetadata; const Stats: TRadioBufferStats; const Spectrum: TRadioSpectrumData;
       Volume: Single; Muted: Boolean);
-    procedure RenderLogs(var Lines: TArray<string>; var Index: Integer);
-    procedure RenderMetadata(var Lines: TArray<string>; var Index: Integer; const Metadata: TStreamMetadata);
-    procedure RenderSpectrum(var Lines: TArray<string>; var Index: Integer; const Spectrum: TRadioSpectrumData);
-    procedure RenderStats(var Lines: TArray<string>; var Index: Integer; const Stats: TRadioBufferStats);
+    procedure RenderLogs(var Lines: TStringArray; var Index: Integer);
+    procedure RenderMetadata(var Lines: TStringArray; var Index: Integer; const Metadata: TStreamMetadata);
+    procedure RenderSpectrum(var Lines: TStringArray; var Index: Integer; const Spectrum: TRadioSpectrumData);
+    procedure RenderStats(var Lines: TStringArray; var Index: Integer; const Stats: TRadioBufferStats);
     procedure ToggleMute;
     procedure UpdateConsoleSize;
     procedure UpdateVolume(Delta: Single);
@@ -113,10 +148,12 @@ type
 
 implementation
 
+{$IFNDEF FPC}
 function CtrlHandler(CtrlType: DWORD): BOOL; stdcall;
 begin
   Result := True;
 end;
+{$ENDIF}
 
 constructor TRadioConsoleUILogger.Create(AOwner: TRadioConsoleUI);
 begin
@@ -139,8 +176,10 @@ begin
   FTitle := 'TRadioPlayer Console';
   FFooterText := 'q quit  m mute  +/- volume  r restart';
   FRenderIntervalMS := DEFAULT_RENDER_INTERVAL_MS;
+{$IFNDEF FPC}
   FInputHandle := GetStdHandle(STD_INPUT_HANDLE);
   FStdoutHandle := GetStdHandle(STD_OUTPUT_HANDLE);
+{$ENDIF}
   FNeedsFullRedraw := True;
 end;
 
@@ -183,9 +222,37 @@ begin
 end;
 
 procedure TRadioConsoleUI.ConfigureConsole;
+{$IFDEF FPC}
+var
+  Flags: LongInt;
+  RawTermios: TTermios;
+{$ELSE}
 var
   Mode: DWORD;
+{$ENDIF}
 begin
+{$IFDEF FPC}
+  FUseVT100 := True;
+  FInputTermiosValid := tcgetattr(UNIX_STDIN_FD, FInputTermios) = 0;
+  if FInputTermiosValid then
+  begin
+    RawTermios := FInputTermios;
+    RawTermios.c_lflag := RawTermios.c_lflag and not (ICANON or ECHO);
+    RawTermios.c_cc[VMIN] := 0;
+    RawTermios.c_cc[VTIME] := 0;
+    tcsetattr(UNIX_STDIN_FD, TCSANOW, RawTermios);
+  end;
+
+  Flags := fpFcntl(UNIX_STDIN_FD, F_GETFL, 0);
+  if Flags >= 0 then
+  begin
+    FInputFlags := Flags;
+    fpFcntl(UNIX_STDIN_FD, F_SETFL, Flags or O_NONBLOCK);
+  end;
+
+  Write(#27'[?25l');
+  FShowCursorRestored := True;
+{$ELSE}
   SetConsoleCtrlHandler(@CtrlHandler, True);
   FUseVT100 := False;
   if GetConsoleMode(FStdoutHandle, Mode) then
@@ -211,6 +278,7 @@ begin
     Write(#27'[?25l');
     FShowCursorRestored := True;
   end;
+{$ENDIF}
 
   UpdateConsoleSize;
   FNeedsFullRedraw := True;
@@ -250,6 +318,19 @@ begin
 end;
 
 procedure TRadioConsoleUI.PollInput;
+{$IFDEF FPC}
+var
+  Ch: Char;
+  Key: Word;
+begin
+  while ReadUnixKey(Key, Ch) do
+  begin
+    ProcessKey(Key, Ch);
+    if FQuitRequested then
+      Exit;
+  end;
+end;
+{$ELSE}
 var
   EventCount: DWORD;
   InputRecord: TInputRecord;
@@ -269,6 +350,37 @@ begin
       Exit;
   end;
 end;
+{$ENDIF}
+
+{$IFDEF FPC}
+function TRadioConsoleUI.ReadUnixKey(out Key: Word; out Ch: Char): Boolean;
+var
+  BytesRead: ssize_t;
+  EscapeSeq: array[0..1] of Char;
+begin
+  Key := 0;
+  Ch := #0;
+  Result := False;
+
+  BytesRead := fpRead(UNIX_STDIN_FD, Ch, 1);
+  if BytesRead <= 0 then
+    Exit;
+
+  Result := True;
+  if Ch = #27 then
+  begin
+    Key := KEY_ESCAPE;
+    BytesRead := fpRead(UNIX_STDIN_FD, EscapeSeq[0], 2);
+    if BytesRead = 2 then
+      if EscapeSeq[0] = '[' then
+        case EscapeSeq[1] of
+          'A': Key := KEY_UP;
+          'B': Key := KEY_DOWN;
+        end;
+    Ch := #0;
+  end;
+end;
+{$ENDIF}
 
 procedure TRadioConsoleUI.ProcessKey(Key: Word; Ch: Char);
 var
@@ -277,17 +389,17 @@ var
 begin
   Handled := False;
   case Key of
-    VK_ESCAPE:
+    KEY_ESCAPE:
       begin
         FQuitRequested := True;
         Handled := True;
       end;
-    VK_UP:
+    KEY_UP:
       begin
         UpdateVolume(0.05);
         Handled := True;
       end;
-    VK_DOWN:
+    KEY_DOWN:
       begin
         UpdateVolume(-0.05);
         Handled := True;
@@ -346,9 +458,9 @@ begin
     TRadioPlayer.PumpMainThreadEvents(0);
 
   PollInput;
-  if ForceRender or (GetTickCount - FLastRenderTick >= FRenderIntervalMS) then
+  if ForceRender or (GetTickCountMS - FLastRenderTick >= FRenderIntervalMS) then
   begin
-    FLastRenderTick := GetTickCount;
+    FLastRenderTick := GetTickCountMS;
     Render;
   end;
 end;
@@ -357,7 +469,7 @@ procedure TRadioConsoleUI.Render;
 var
   I: Integer;
   Index: Integer;
-  Lines: TArray<string>;
+  Lines: TStringArray;
   LocalDeviceLabel: string;
   LocalFooterText: string;
   LocalStatusText: string;
@@ -442,7 +554,7 @@ begin
   RenderDiff(Lines);
 end;
 
-procedure TRadioConsoleUI.RenderDiff(const Lines: TArray<string>);
+procedure TRadioConsoleUI.RenderDiff(const Lines: TStringArray);
 var
   I: Integer;
   LineText: string;
@@ -478,7 +590,7 @@ begin
     FLastRenderedLines[I] := PadRight(Lines[I], FScreenWidth);
 end;
 
-procedure TRadioConsoleUI.RenderFooter(var Lines: TArray<string>; var Index: Integer;
+procedure TRadioConsoleUI.RenderFooter(var Lines: TStringArray; var Index: Integer;
   const FooterText: string);
 begin
   if Index > High(Lines) then
@@ -494,7 +606,7 @@ begin
   Lines[Index] := BoxLine('+', '=', '+');
 end;
 
-procedure TRadioConsoleUI.RenderHeader(var Lines: TArray<string>; var Index: Integer;
+procedure TRadioConsoleUI.RenderHeader(var Lines: TStringArray; var Index: Integer;
   const State: TRadioPlayerState; const Metadata: TStreamMetadata; const Stats: TRadioBufferStats;
   const Spectrum: TRadioSpectrumData; Volume: Single; Muted: Boolean);
 begin
@@ -507,7 +619,7 @@ begin
   Lines[Index] := BoxContent(Format(
     'State %-10s  Backend %-7s  Mode %-8s  Volume %3d%%  Muted %-3s  Dispatch %s',
     [StateName(State),
-     IfThen(FPlayer.OutputBackend = robWaveOut, 'waveOut', 'WASAPI'),
+     OutputBackendName(FPlayer.OutputBackend),
      WASAPIVolumeModeName(FPlayer.WasapiVolumeMode),
      Round(Volume * 100),
      BoolText(Muted),
@@ -525,11 +637,14 @@ begin
   Inc(Index);
 end;
 
-procedure TRadioConsoleUI.RenderLogs(var Lines: TArray<string>; var Index: Integer);
+procedure TRadioConsoleUI.RenderLogs(var Lines: TStringArray; var Index: Integer);
 var
   BlankCount: Integer;
   I: Integer;
-  Items: TArray<string>;
+  Items: TStringArray;
+{$IFNDEF FPC}
+  QueueItems: TArray<string>;
+{$ENDIF}
 begin
   if Index > High(Lines) then
     Exit;
@@ -542,10 +657,20 @@ begin
 
   FLock.Acquire;
   try
+{$IFDEF FPC}
     Items := FLogLines.ToArray;
+{$ELSE}
+    QueueItems := FLogLines.ToArray;
+{$ENDIF}
   finally
     FLock.Release;
   end;
+
+{$IFNDEF FPC}
+  SetLength(Items, Length(QueueItems));
+  for I := 0 to High(QueueItems) do
+    Items[I] := QueueItems[I];
+{$ENDIF}
 
   for I := 0 to High(Items) do
   begin
@@ -567,7 +692,7 @@ begin
   end;
 end;
 
-procedure TRadioConsoleUI.RenderMetadata(var Lines: TArray<string>; var Index: Integer;
+procedure TRadioConsoleUI.RenderMetadata(var Lines: TStringArray; var Index: Integer;
   const Metadata: TStreamMetadata);
 begin
   if Index > High(Lines) then
@@ -596,7 +721,7 @@ begin
   Inc(Index);
 end;
 
-procedure TRadioConsoleUI.RenderSpectrum(var Lines: TArray<string>; var Index: Integer;
+procedure TRadioConsoleUI.RenderSpectrum(var Lines: TStringArray; var Index: Integer;
   const Spectrum: TRadioSpectrumData);
 var
   Row: Integer;
@@ -620,7 +745,7 @@ begin
   end;
 end;
 
-procedure TRadioConsoleUI.RenderStats(var Lines: TArray<string>; var Index: Integer;
+procedure TRadioConsoleUI.RenderStats(var Lines: TStringArray; var Index: Integer;
   const Stats: TRadioBufferStats);
 begin
   if Index > High(Lines) then
@@ -705,6 +830,16 @@ end;
 
 procedure TRadioConsoleUI.RestoreConsole;
 begin
+{$IFDEF FPC}
+  if FShowCursorRestored and FUseVT100 then
+  begin
+    Write(#27'[?25h');
+    FShowCursorRestored := False;
+  end;
+  if FInputTermiosValid then
+    tcsetattr(UNIX_STDIN_FD, TCSANOW, FInputTermios);
+  fpFcntl(UNIX_STDIN_FD, F_SETFL, FInputFlags);
+{$ELSE}
   if FShowCursorRestored and FUseVT100 then
   begin
     Write(#27'[?25h');
@@ -712,6 +847,7 @@ begin
   end;
   if (FInputHandle <> INVALID_HANDLE_VALUE) and (FInputMode <> 0) then
     SetConsoleMode(FInputHandle, FInputMode);
+{$ENDIF}
 end;
 
 procedure TRadioConsoleUI.SetDeviceLabel(const Value: string);
@@ -789,16 +925,38 @@ begin
 end;
 
 procedure TRadioConsoleUI.UpdateConsoleSize;
+{$IFDEF FPC}
+type
+  TWinsize = packed record
+    ws_row: Word;
+    ws_col: Word;
+    ws_xpixel: Word;
+    ws_ypixel: Word;
+  end;
+var
+  WinSize: TWinsize;
+{$ELSE}
 var
   BufferInfo: TConsoleScreenBufferInfo;
+{$ENDIF}
 begin
   FScreenWidth := 100;
   FScreenHeight := 40;
+{$IFDEF FPC}
+  if fpIOCtl(UNIX_STDOUT_FD, TIOCGWINSZ_IOCTL, @WinSize) = 0 then
+  begin
+    if WinSize.ws_col > 0 then
+      FScreenWidth := WinSize.ws_col;
+    if WinSize.ws_row > 0 then
+      FScreenHeight := WinSize.ws_row;
+  end;
+{$ELSE}
   if GetConsoleScreenBufferInfo(FStdoutHandle, BufferInfo) then
   begin
     FScreenWidth := BufferInfo.srWindow.Right - BufferInfo.srWindow.Left + 1;
     FScreenHeight := BufferInfo.srWindow.Bottom - BufferInfo.srWindow.Top + 1;
   end;
+{$ENDIF}
   FLayoutWidth := Max(60, FScreenWidth - 1);
 end;
 

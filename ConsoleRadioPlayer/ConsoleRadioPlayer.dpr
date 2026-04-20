@@ -3,10 +3,17 @@ program ConsoleRadioPlayer;
 {$APPTYPE CONSOLE}
 
 uses
-{$IF CompilerVersion >= 23.0}
-  System.SysUtils,
-{$ELSE}
+{$IFDEF UNIX}
+  cthreads,
+{$ENDIF}
+{$IFDEF FPC}
   SysUtils,
+{$ELSE}
+  {$IF CompilerVersion >= 23.0}
+  System.SysUtils,
+  {$ELSE}
+  SysUtils,
+  {$IFEND}
 {$IFEND}
   ConsoleRadioPlayer.App in 'ConsoleRadioPlayer.App.pas';
 

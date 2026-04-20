@@ -3,7 +3,11 @@ unit Radio.Output;
 interface
 
 uses
+{$IFDEF FPC}
+  SysUtils;
+{$ELSE}
   System.SysUtils;
+{$ENDIF}
 
 type
   TAudioSampleType = (astInt16, astFloat32);

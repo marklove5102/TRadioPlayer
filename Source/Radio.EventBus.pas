@@ -3,10 +3,17 @@ unit Radio.EventBus;
 interface
 
 uses
+{$IFDEF FPC}
+  Classes,
+  Generics.Collections,
+  SyncObjs,
+  SysUtils,
+{$ELSE}
   System.Classes,
   System.Generics.Collections,
   System.SyncObjs,
   System.SysUtils,
+{$ENDIF}
   Radio.Types;
 
 type
@@ -32,7 +39,7 @@ type
     DelayMS: Cardinal;
   end;
 
-  TRadioEventSink = reference to procedure(const Message: TRadioPlayerEventMessage);
+  TRadioEventSink = procedure(const Message: TRadioPlayerEventMessage) of object;
 
   IRadioEventDispatchTarget = interface
     ['{D99BD9F4-764E-49A8-8533-1B6A4A7888A7}']
@@ -76,6 +83,16 @@ type
 implementation
 
 type
+  TQueuedMainThreadDelivery = class
+  private
+    FDeliveryTarget: IRadioEventDispatchTarget;
+    FMessage: TRadioPlayerEventMessage;
+    procedure Execute;
+  public
+    constructor Create(const ADeliveryTarget: IRadioEventDispatchTarget;
+      const AMessage: TRadioPlayerEventMessage);
+  end;
+
   TRadioEventDispatchTarget = class(TInterfacedObject, IRadioEventDispatchTarget)
   private
     FActive: Boolean;
@@ -94,6 +111,24 @@ begin
   FActive := True;
   FLock := TCriticalSection.Create;
   FSink := ASink;
+end;
+
+constructor TQueuedMainThreadDelivery.Create(const ADeliveryTarget: IRadioEventDispatchTarget;
+  const AMessage: TRadioPlayerEventMessage);
+begin
+  inherited Create;
+  FDeliveryTarget := ADeliveryTarget;
+  FMessage := AMessage;
+end;
+
+procedure TQueuedMainThreadDelivery.Execute;
+begin
+  try
+    if Assigned(FDeliveryTarget) then
+      FDeliveryTarget.Deliver(FMessage);
+  finally
+    Free;
+  end;
 end;
 
 destructor TRadioEventDispatchTarget.Destroy;
@@ -205,12 +240,11 @@ end;
 
 procedure TRadioEventBus.QueueMainThreadDelivery(const DeliveryTarget: IRadioEventDispatchTarget;
   const Message: TRadioPlayerEventMessage);
+var
+  Delivery: TQueuedMainThreadDelivery;
 begin
-  TThread.Queue(nil,
-    procedure
-    begin
-      DeliveryTarget.Deliver(Message);
-    end);
+  Delivery := TQueuedMainThreadDelivery.Create(DeliveryTarget, Message);
+  TThread.Queue(nil, Delivery.Execute);
 end;
 
 procedure TRadioEventBus.Post(const Message: TRadioPlayerEventMessage);

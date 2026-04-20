@@ -3,31 +3,39 @@ unit ConsoleRadioPlayer.App;
 interface
 
 uses
-{$IF CompilerVersion >= 23.0}
+{$IFDEF FPC}
+  IniFiles,
+  Math,
+  SysUtils,
+{$ELSE}
+  {$IF CompilerVersion >= 23.0}
   Winapi.Windows,
   System.IniFiles,
   System.IOUtils,
   System.Math,
   System.SysUtils,
-{$ELSE}
+  {$ELSE}
   Windows,
   IniFiles,
   IOUtils,
   Math,
   SysUtils,
+  {$IFEND}
 {$IFEND}
   Radio.ConsoleUI,
   Radio.Player,
   Radio.Types;
 
 type
+  TStringArray = array of string;
+
   TConsoleRadioPlayerApp = class
   private
     FConfigPath: string;
     FDeviceIndex: Integer;
     FDevices: TRadioWASAPIDeviceInfos;
     FPlayer: TRadioPlayer;
-    FRecentURLs: TArray<string>;
+    FRecentURLs: TStringArray;
     FUI: TRadioConsoleUI;
     FURL: string;
     function BackendName: string;
@@ -71,7 +79,11 @@ const
 constructor TConsoleRadioPlayerApp.Create;
 begin
   inherited Create;
+{$IFDEF FPC}
+  FConfigPath := IncludeTrailingPathDelimiter(ConfigDir) + 'ConsoleRadioPlayer.ini';
+{$ELSE}
   FConfigPath := TPath.Combine(ConfigDir, 'ConsoleRadioPlayer.ini');
+{$ENDIF}
   FPlayer := TRadioPlayer.Create(nil);
   FPlayer.EventDispatchMode := redmMainThread;
   FPlayer.OutputSpectrumBinCount := 96;
@@ -110,7 +122,7 @@ procedure TConsoleRadioPlayerApp.AddRecentURL(const URL: string);
 var
   Count: Integer;
   I: Integer;
-  NewItems: TArray<string>;
+  NewItems: TStringArray;
 begin
   if Trim(URL) = '' then
     Exit;
@@ -138,12 +150,41 @@ procedure TConsoleRadioPlayerApp.ApplyBackendByName(const Name: string);
 begin
   if SameText(Name, 'waveout') then
     FPlayer.OutputBackend := robWaveOut
+  else if SameText(Name, 'aplay') then
+    FPlayer.OutputBackend := robAPlay
+  else if SameText(Name, 'pulse') or SameText(Name, 'pulseaudio') then
+    FPlayer.OutputBackend := robPulseAudio
+{$IFDEF MSWINDOWS}
+  {$IFDEF RADIO_HAS_WASAPI}
+  else if SameText(Name, 'wasapi') then
+    FPlayer.OutputBackend := robWASAPI
+  {$ELSE}
+  else if SameText(Name, 'wasapi') then
+    FPlayer.OutputBackend := robWaveOut
+  {$ENDIF}
+{$ENDIF}
   else
-    FPlayer.OutputBackend := robWASAPI;
+{$IFDEF MSWINDOWS}
+    FPlayer.OutputBackend := robWaveOut;
+{$ELSE}
+    FPlayer.OutputBackend := robPulseAudio;
+{$ENDIF}
 end;
 
 procedure TConsoleRadioPlayerApp.ApplyDeviceIndex(Index: Integer);
 begin
+{$IFNDEF MSWINDOWS}
+  FDeviceIndex := -1;
+  FPlayer.WasapiDeviceId := '';
+  FUI.DeviceLabel := '<not supported on this platform>';
+  Exit;
+{$ENDIF}
+{$IFNDEF RADIO_HAS_WASAPI}
+  FDeviceIndex := -1;
+  FPlayer.WasapiDeviceId := '';
+  FUI.DeviceLabel := '<waveOut default>';
+  Exit;
+{$ENDIF}
   FDevices := TRadioPlayer.EnumerateWASAPIDevices;
   if Length(FDevices) = 0 then
   begin
@@ -165,6 +206,12 @@ end;
 
 procedure TConsoleRadioPlayerApp.ApplyVolumeModeByName(const Name: string);
 begin
+{$IFNDEF MSWINDOWS}
+  Exit;
+{$ENDIF}
+{$IFNDEF RADIO_HAS_WASAPI}
+  Exit;
+{$ENDIF}
   if SameText(Name, 'endpoint') then
     FPlayer.WasapiVolumeMode := rwvmEndpoint
   else
@@ -173,26 +220,39 @@ end;
 
 function TConsoleRadioPlayerApp.BackendName: string;
 begin
-  case FPlayer.OutputBackend of
-    robWaveOut:
-      Result := 'waveout';
-  else
-    Result := 'wasapi';
-  end;
+  Result := OutputBackendName(FPlayer.OutputBackend);
 end;
 
 function TConsoleRadioPlayerApp.ConfigDir: string;
 begin
+{$IFDEF FPC}
+  Result := IncludeTrailingPathDelimiter(GetAppConfigDir(False)) + 'console-radio-player';
+{$ELSE}
   Result := TPath.Combine(TPath.GetHomePath, '.console-radio-player');
+{$ENDIF}
 end;
 
 function TConsoleRadioPlayerApp.ControlHintText: string;
 begin
+{$IFDEF MSWINDOWS}
+  {$IFDEF RADIO_HAS_WASAPI}
   Result := 'q quit  m mute  +/- volume  r restart  b backend  d next-device  v volume-mode  1-5 load preset  !-%% save preset';
+  {$ELSE}
+  Result := 'q quit  m mute  +/- volume  r restart  1-5 load preset  !-%% save preset';
+  {$ENDIF}
+{$ELSE}
+  Result := 'q quit  m mute  +/- volume  r restart  b backend  1-5 load preset  !-%% save preset';
+{$ENDIF}
 end;
 
 function TConsoleRadioPlayerApp.CurrentDeviceLabel: string;
 begin
+{$IFDEF MSWINDOWS}
+  {$IFNDEF RADIO_HAS_WASAPI}
+  Result := '<waveOut default>';
+  Exit;
+  {$ENDIF}
+{$ENDIF}
   if (FDeviceIndex >= 0) and (FDeviceIndex <= High(FDevices)) then
     Result := DeviceShortLabel(FDevices[FDeviceIndex])
   else if Trim(FPlayer.WasapiDeviceId) <> '' then
@@ -297,6 +357,14 @@ var
   Devices: TRadioWASAPIDeviceInfos;
   I: Integer;
 begin
+{$IFNDEF MSWINDOWS}
+  Writeln('WASAPI device listing is only available on Windows.');
+  Exit;
+{$ENDIF}
+{$IFNDEF RADIO_HAS_WASAPI}
+  Writeln('WASAPI support is not compiled into this Windows build.');
+  Exit;
+{$ENDIF}
   Devices := TRadioPlayer.EnumerateWASAPIDevices;
   Writeln('WASAPI render devices');
   Writeln(StringOfChar('=', 72));
@@ -373,13 +441,20 @@ begin
     Writeln('ConsoleRadioPlayer');
     Writeln;
     Writeln('Usage:');
-    Writeln('  ConsoleRadioPlayer.exe [url] [backend] [volume_mode] [device_id] [buffer_ms] [prebuffer_ms]');
-    Writeln('  ConsoleRadioPlayer.exe --list-devices');
+    Writeln('  ConsoleRadioPlayer [url] [backend] [volume_mode] [device_id] [buffer_ms] [prebuffer_ms]');
+    Writeln('  ConsoleRadioPlayer --list-devices');
     Writeln;
     Writeln('Examples:');
-    Writeln('  ConsoleRadioPlayer.exe');
-    Writeln('  ConsoleRadioPlayer.exe https://stream.radio38.de/radio38-live/mp3-192 wasapi session');
-    Writeln('  ConsoleRadioPlayer.exe https://stream.radio38.de/radio38-live/mp3-192 waveout');
+    Writeln('  ConsoleRadioPlayer');
+{$IFDEF MSWINDOWS}
+  {$IFDEF RADIO_HAS_WASAPI}
+    Writeln('  ConsoleRadioPlayer https://stream.radio38.de/radio38-live/mp3-192 wasapi session');
+  {$ENDIF}
+    Writeln('  ConsoleRadioPlayer https://stream.radio38.de/radio38-live/mp3-192 waveout');
+{$ELSE}
+    Writeln('  ConsoleRadioPlayer https://stream.radio38.de/radio38-live/mp3-192 pulseaudio');
+    Writeln('  ConsoleRadioPlayer https://stream.radio38.de/radio38-live/mp3-192 aplay');
+{$ENDIF}
     Halt(0);
   end;
 
@@ -416,6 +491,23 @@ end;
 
 procedure TConsoleRadioPlayerApp.RefreshDeviceSelection;
 begin
+{$IFNDEF MSWINDOWS}
+  SetLength(FDevices, 0);
+  FDeviceIndex := -1;
+  if FPlayer.OutputBackend = robAPlay then
+    FUI.DeviceLabel := '<aplay default>'
+  else if FPlayer.OutputBackend = robPulseAudio then
+    FUI.DeviceLabel := '<PulseAudio default>'
+  else
+    FUI.DeviceLabel := '<platform default>';
+  Exit;
+{$ENDIF}
+{$IFNDEF RADIO_HAS_WASAPI}
+  SetLength(FDevices, 0);
+  FDeviceIndex := -1;
+  FUI.DeviceLabel := '<waveOut default>';
+  Exit;
+{$ENDIF}
   FDevices := TRadioPlayer.EnumerateWASAPIDevices;
   FDeviceIndex := -1;
   if Trim(FPlayer.WasapiDeviceId) = '' then
@@ -508,6 +600,28 @@ end;
 
 procedure TConsoleRadioPlayerApp.ToggleBackend;
 begin
+{$IFNDEF MSWINDOWS}
+  case FPlayer.OutputBackend of
+    robAPlay:
+      FPlayer.OutputBackend := robPulseAudio;
+  else
+      FPlayer.OutputBackend := robAPlay;
+  end;
+
+  if FPlayer.OutputBackend = robAPlay then
+    FUI.DeviceLabel := '<aplay default>'
+  else
+    FUI.DeviceLabel := '<PulseAudio default>';
+
+  RestartPlayback('Backend: ' + BackendName);
+  Exit;
+{$ENDIF}
+{$IFNDEF RADIO_HAS_WASAPI}
+  FPlayer.OutputBackend := robWaveOut;
+  FUI.DeviceLabel := '<waveOut default>';
+  SetStatus('Only waveOut is available in this Windows build');
+  Exit;
+{$ENDIF}
   case FPlayer.OutputBackend of
     robWaveOut:
       FPlayer.OutputBackend := robWASAPI;
@@ -527,6 +641,14 @@ procedure TConsoleRadioPlayerApp.UpdateDeviceDelta(Delta: Integer);
 var
   NewIndex: Integer;
 begin
+{$IFNDEF MSWINDOWS}
+  SetStatus('Device selection is not available on this platform');
+  Exit;
+{$ENDIF}
+{$IFNDEF RADIO_HAS_WASAPI}
+  SetStatus('WASAPI device selection is not available in this build');
+  Exit;
+{$ENDIF}
   FDevices := TRadioPlayer.EnumerateWASAPIDevices;
   if Length(FDevices) = 0 then
   begin
@@ -548,6 +670,14 @@ end;
 
 procedure TConsoleRadioPlayerApp.UpdateVolumeMode;
 begin
+{$IFNDEF MSWINDOWS}
+  SetStatus('Volume mode is only applicable to the Windows WASAPI backend');
+  Exit;
+{$ENDIF}
+{$IFNDEF RADIO_HAS_WASAPI}
+  SetStatus('Volume mode is only applicable when WASAPI support is compiled in');
+  Exit;
+{$ENDIF}
   case FPlayer.WasapiVolumeMode of
     rwvmEndpoint:
       FPlayer.WasapiVolumeMode := rwvmSession;

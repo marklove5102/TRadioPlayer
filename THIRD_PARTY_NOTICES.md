@@ -4,7 +4,7 @@ This repository contains or depends on third-party work.
 
 ## DelphiFFmpeg.com Headers
 
-The files under `Headers/` are based on the Delphi/Pascal FFmpeg header translations from DelphiFFmpeg.com and were updated in this repository to match FFmpeg 8.0.
+The files under `Headers/` are based on the Delphi/Pascal FFmpeg header translations from DelphiFFmpeg.com and were updated in this repository to match FFmpeg 8.1.
 
 These files include their own per-file notices. The current header text in the repository states that redistribution and use in source and binary forms, with or without modification, are permitted if the copyright notice, conditions, and disclaimer are retained.
 

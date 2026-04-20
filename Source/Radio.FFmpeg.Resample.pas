@@ -3,7 +3,11 @@ unit Radio.FFmpeg.Resample;
 interface
 
 uses
+{$IFDEF FPC}
+  SysUtils,
+{$ELSE}
   System.SysUtils,
+{$ENDIF}
   FFTypes,
   libavcodec,
   libavutil,

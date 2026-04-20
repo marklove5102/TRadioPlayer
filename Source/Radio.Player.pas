@@ -3,15 +3,24 @@ unit Radio.Player;
 interface
 
 uses
+{$IFDEF FPC}
+  Classes,
+  Math,
+  SysUtils,
+  SyncObjs,
+{$ELSE}
   System.Classes,
   System.Math,
   System.SysUtils,
   System.SyncObjs,
-{$IF CompilerVersion >= 23.0}
+{$ENDIF}
+{$IFDEF MSWINDOWS}
+  {$IF CompilerVersion >= 23.0}
   Winapi.ActiveX,
-{$ELSE}
+  {$ELSE}
   ActiveX,
-{$IFEND}
+  {$IFEND}
+{$ENDIF}
   libavcodec,
   libavcodec_codec_id,
   libavcodec_packet,
@@ -25,9 +34,18 @@ uses
   Radio.Logging,
   Radio.Metadata,
   Radio.Output,
+{$IFDEF MSWINDOWS}
+  {$IFDEF RADIO_HAS_WASAPI}
   Radio.Output.WASAPI,
+  {$ENDIF}
   Radio.Output.WaveOut,
+{$ENDIF}
+{$IFDEF LINUX}
+  Radio.Output.APlay,
+  Radio.Output.PulseAudio,
+{$ENDIF}
   Radio.PCMBuffer,
+  Radio.Platform,
   Radio.Resampler,
   Radio.Spectrum,
   Radio.StreamClient,
@@ -127,6 +145,7 @@ type
     procedure SetWasapiVolumeMode(const Value: TRadioWASAPIVolumeMode);
     procedure SignalOutputFailure(const MessageText: string);
     procedure ProcessOutputAudio(Buffer: PByte; ByteCount: Integer; Output: TAudioOutput);
+    procedure HandleEventBusMessage(const Message: TRadioPlayerEventMessage);
     procedure WorkerExecute;
   public
     class function EnumerateWASAPIDevices: TRadioWASAPIDeviceInfos; static;
@@ -275,14 +294,20 @@ end;
 
 constructor TRadioSession.Create(Backend: TRadioOutputBackend;
   const WasapiDeviceId: string; WasapiVolumeMode: TRadioWASAPIVolumeMode);
+{$IFDEF MSWINDOWS}
+  {$IFDEF RADIO_HAS_WASAPI}
 var
   WasapiOutput: TAudioOutputWASAPI;
+  {$ENDIF}
+{$ENDIF}
 begin
   inherited Create;
   StreamClient := TRadioStreamClient.Create;
   Decoder := TAudioDecodeWorker.Create;
   Resampler := TAudioResampler.Create;
   case Backend of
+{$IFDEF MSWINDOWS}
+    {$IFDEF RADIO_HAS_WASAPI}
     robWASAPI:
       begin
         WasapiOutput := TAudioOutputWASAPI.Create;
@@ -290,8 +315,22 @@ begin
         WasapiOutput.VolumeMode := WasapiVolumeMode;
         Output := WasapiOutput;
       end;
+    {$ENDIF}
+    robWaveOut:
+      Output := TAudioOutputWaveOut.Create;
+{$ENDIF}
+{$IFDEF LINUX}
+    robAPlay:
+      Output := TAudioOutputAPlay.Create;
+    robPulseAudio:
+      Output := TAudioOutputPulseAudio.Create;
+{$ENDIF}
   else
+{$IFDEF MSWINDOWS}
     Output := TAudioOutputWaveOut.Create;
+{$ELSE}
+    Output := TAudioOutputAPlay.Create;
+{$ENDIF}
   end;
   Packet := TFFmpegApi.AllocPacket;
   Frame := TFFmpegApi.AllocFrame;
@@ -330,17 +369,21 @@ begin
   FCriticalSection := TCriticalSection.Create;
   FStopEvent := TEvent.Create(nil, True, False, '');
   FEventDispatchMode := redmDedicatedThread;
-  FEventBus := TRadioEventBus.Create(
-    procedure(const Message: TRadioPlayerEventMessage)
-    begin
-      DispatchEvent(Message);
-    end, FEventDispatchMode);
+  FEventBus := TRadioEventBus.Create(HandleEventBusMessage, FEventDispatchMode);
   FState := rpsIdle;
   FMetadata := DefaultStreamMetadata;
   FLastSpectrum := Default(TRadioSpectrumData);
   FStats := DefaultBufferStats;
   FReconnectPolicy := DefaultReconnectPolicy;
+{$IFDEF LINUX}
+  FOutputBackend := robPulseAudio;
+{$ELSE}
+  {$IFDEF RADIO_HAS_WASAPI}
   FOutputBackend := robWASAPI;
+  {$ELSE}
+  FOutputBackend := robWaveOut;
+  {$ENDIF}
+{$ENDIF}
   FBufferTimeMS := 2000;
   FOutputSpectrumEnabled := True;
   FOutputSpectrumFFTSize := 2048;
@@ -398,7 +441,20 @@ end;
 
 class function TRadioPlayer.EnumerateWASAPIDevices: TRadioWASAPIDeviceInfos;
 begin
+{$IFDEF MSWINDOWS}
+  {$IFDEF RADIO_HAS_WASAPI}
   Result := TAudioOutputWASAPI.EnumerateDevices;
+  {$ELSE}
+  SetLength(Result, 0);
+  {$ENDIF}
+{$ELSE}
+  SetLength(Result, 0);
+{$ENDIF}
+end;
+
+procedure TRadioPlayer.HandleEventBusMessage(const Message: TRadioPlayerEventMessage);
+begin
+  DispatchEvent(Message);
 end;
 
 class procedure TRadioPlayer.PumpMainThreadEvents(TimeoutMS: Cardinal);
@@ -915,8 +971,12 @@ begin
   try
     FWasapiVolumeMode := Value;
     ActiveOutput := FActiveOutput;
+{$IFDEF MSWINDOWS}
+  {$IFDEF RADIO_HAS_WASAPI}
     if Assigned(ActiveOutput) and (ActiveOutput is TAudioOutputWASAPI) then
       TAudioOutputWASAPI(ActiveOutput).VolumeMode := Value;
+  {$ENDIF}
+{$ENDIF}
   finally
     FCriticalSection.Release;
   end;
@@ -1096,16 +1156,20 @@ var
   CurrentWasapiDeviceId: string;
   CurrentWasapiVolumeMode: TRadioWASAPIVolumeMode;
   CurrentURL: string;
+{$IFDEF MSWINDOWS}
   CoInitResult: HResult;
+{$ENDIF}
 begin
+{$IFDEF MSWINDOWS}
   CoInitResult := CoInitializeEx(nil, COINIT_MULTITHREADED);
+{$ENDIF}
   Session := nil;
   try
     try
       DelayMS := 0;
       Attempt := 0;
       ReconnectAttemptCount := 0;
-      LastStatsTick := TThread.GetTickCount;
+      LastStatsTick := GetTickCountMS;
       SessionStartTick := LastStatsTick;
 
       FCriticalSection.Acquire;
@@ -1364,10 +1428,10 @@ begin
             Break;
           end;
 
-          if TThread.GetTickCount - LastStatsTick >= 1000 then
+          if GetTickCountMS - LastStatsTick >= 1000 then
           begin
-            ElapsedMS := TThread.GetTickCount - LastStatsTick;
-            LastStatsTick := TThread.GetTickCount;
+            ElapsedMS := GetTickCountMS - LastStatsTick;
+            LastStatsTick := GetTickCountMS;
             ApplyStatsBufferSnapshot(Session.PCMBuffer, Session.Output, BytesPerSecond,
               BufferCapacityBytes, PrebufferBytes);
             ApplyStatsRates(ElapsedMS, IntervalPackets, IntervalFrames, IntervalInputBytes,
@@ -1485,8 +1549,10 @@ begin
     end;
   finally
     Session.Free;
+{$IFDEF MSWINDOWS}
     if (CoInitResult = S_OK) or (CoInitResult = S_FALSE) then
       CoUninitialize;
+{$ENDIF}
   end;
 end;
 

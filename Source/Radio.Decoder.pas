@@ -3,7 +3,11 @@ unit Radio.Decoder;
 interface
 
 uses
+{$IFDEF FPC}
+  SysUtils,
+{$ELSE}
   System.SysUtils,
+{$ENDIF}
   libavcodec,
   libavcodec_codec,
   libavcodec_codec_par,

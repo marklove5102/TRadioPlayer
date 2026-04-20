@@ -3,7 +3,11 @@ unit Radio.StreamClient;
 interface
 
 uses
+{$IFDEF FPC}
+  SysUtils,
+{$ELSE}
   System.SysUtils,
+{$ENDIF}
   libavcodec_codec,
   libavcodec_codec_par,
   libavcodec_packet,

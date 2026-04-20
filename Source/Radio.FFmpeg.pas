@@ -3,7 +3,11 @@ unit Radio.FFmpeg;
 interface
 
 uses
+{$IFDEF FPC}
+  SysUtils,
+{$ELSE}
   System.SysUtils,
+{$ENDIF}
   FFTypes,
   libavformat,
   libavutil_dict,

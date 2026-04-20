@@ -61,13 +61,18 @@ interface
 {$I CompilerDefines.inc}
 
 uses
-{$IFDEF VCL_XE2_OR_ABOVE}
+{$IFDEF FPC}
+  SysUtils,
+  AnsiStrings,
+{$ELSE}
+  {$IFDEF VCL_XE2_OR_ABOVE}
   System.SysUtils,
   {$IF Defined(VCL_XE4_OR_ABOVE)}
     System.AnsiStrings, // StrLen
   {$IFEND}
-{$ELSE}
+  {$ELSE}
   SysUtils,
+  {$ENDIF}
 {$ENDIF}
   libavutil,
   libavutil_rational;
@@ -136,10 +141,14 @@ implementation
 
 function MyStrLen(const Str: PAnsiChar): Cardinal;
 begin
-{$IFDEF VCL_XE4_OR_ABOVE}
-  Result := System.AnsiStrings.StrLen(Str);
+{$IFDEF FPC}
+  Result := AnsiStrings.StrLen(Str);
 {$ELSE}
+  {$IFDEF VCL_XE4_OR_ABOVE}
+  Result := System.AnsiStrings.StrLen(Str);
+  {$ELSE}
   Result := StrLen(Str);
+  {$ENDIF}
 {$ENDIF}
 end;
 

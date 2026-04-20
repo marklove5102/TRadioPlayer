@@ -3,7 +3,11 @@ unit Radio.Types;
 interface
 
 uses
+{$IFDEF FPC}
+  Classes;
+{$ELSE}
   System.Classes;
+{$ENDIF}
 
 type
   TRadioSpectrumBins = array of Single;
@@ -96,7 +100,9 @@ type
 
   TRadioOutputBackend = (
     robWASAPI,
-    robWaveOut
+    robWaveOut,
+    robAPlay,
+    robPulseAudio
   );
 
   TRadioWASAPIVolumeMode = (
@@ -135,6 +141,7 @@ function DefaultReconnectPolicy: TRadioReconnectPolicy;
 function DefaultStreamMetadata: TStreamMetadata;
 function DefaultBufferStats: TRadioBufferStats;
 function EventDispatchModeName(Mode: TRadioEventDispatchMode): string;
+function OutputBackendName(Backend: TRadioOutputBackend): string;
 function WASAPIVolumeModeName(Mode: TRadioWASAPIVolumeMode): string;
 
 implementation
@@ -164,6 +171,20 @@ begin
       Result := 'main';
   else
     Result := 'threaded';
+  end;
+end;
+
+function OutputBackendName(Backend: TRadioOutputBackend): string;
+begin
+  case Backend of
+    robWaveOut:
+      Result := 'waveout';
+    robAPlay:
+      Result := 'aplay';
+    robPulseAudio:
+      Result := 'pulseaudio';
+  else
+    Result := 'wasapi';
   end;
 end;
 

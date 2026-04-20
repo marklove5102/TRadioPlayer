@@ -1,0 +1,2 @@
+Bin/Win32/*.dll filter=lfs diff=lfs merge=lfs -text
+Bin/Win64/*.dll filter=lfs diff=lfs merge=lfs -text

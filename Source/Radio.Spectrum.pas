@@ -3,13 +3,23 @@ unit Radio.Spectrum;
 interface
 
 uses
+{$IFDEF FPC}
+  Classes,
+  Math,
+  SysUtils,
+{$ELSE}
   System.Classes,
   System.Math,
   System.SysUtils,
+{$ENDIF}
   Radio.Output,
+  Radio.Platform,
   Radio.Types;
 
 type
+  TSingleArray = array of Single;
+  TDoubleArray = array of Double;
+
   TRadioSpectrumAnalyzer = class
   private
     FBinCount: Integer;
@@ -18,19 +28,19 @@ type
     FFFTSize: Integer;
     FLastEmitTick: Cardinal;
     FMinFrequencyHz: Single;
-    FOutput: TArray<Single>;
-    FReal: TArray<Double>;
-    FImag: TArray<Double>;
-    FRing: TArray<Single>;
+    FOutput: TSingleArray;
+    FReal: TDoubleArray;
+    FImag: TDoubleArray;
+    FRing: TSingleArray;
     FSampleRate: Integer;
-    FWindow: TArray<Double>;
+    FWindow: TDoubleArray;
     FWritePos: Integer;
     procedure AddSample(const Value: Single);
     procedure BuildWindow;
-    procedure CopyLatestSamples(var Samples: TArray<Single>);
+    procedure CopyLatestSamples(var Samples: TSingleArray);
     procedure EnsureConfigured(SampleRate, Channels: Integer);
     procedure PerformFFT;
-    procedure ReverseBits(var RealData, ImagData: TArray<Double>);
+    procedure ReverseBits(var RealData, ImagData: TDoubleArray);
   public
     constructor Create(AFFTSize, ABinCount: Integer);
     function Consume(Buffer: PByte; ByteCount, Channels, SampleRate: Integer;
@@ -92,7 +102,7 @@ var
   MonoValue: Single;
   NowTick: Cardinal;
   RightValue: Single;
-  Samples: TArray<Single>;
+  Samples: TSingleArray;
   Sample16: PSmallInt;
   Sample32: PSingle;
   BinHigh: Integer;
@@ -163,7 +173,7 @@ begin
   if FBufferedSamples < FFFTSize then
     Exit;
 
-  NowTick := TThread.GetTickCount;
+  NowTick := GetTickCountMS;
   if (MinIntervalMS > 0) and (NowTick - FLastEmitTick < MinIntervalMS) then
     Exit;
   FLastEmitTick := NowTick;
@@ -220,7 +230,7 @@ begin
   Result := True;
 end;
 
-procedure TRadioSpectrumAnalyzer.CopyLatestSamples(var Samples: TArray<Single>);
+procedure TRadioSpectrumAnalyzer.CopyLatestSamples(var Samples: TSingleArray);
 var
   Count: Integer;
   I: Integer;
@@ -298,7 +308,7 @@ begin
   end;
 end;
 
-procedure TRadioSpectrumAnalyzer.ReverseBits(var RealData, ImagData: TArray<Double>);
+procedure TRadioSpectrumAnalyzer.ReverseBits(var RealData, ImagData: TDoubleArray);
 var
   Bit: Integer;
   I: Integer;

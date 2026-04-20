@@ -3,8 +3,13 @@ unit Radio.PCMBuffer;
 interface
 
 uses
+{$IFDEF FPC}
+  SyncObjs,
+  SysUtils;
+{$ELSE}
   System.SyncObjs,
   System.SysUtils;
+{$ENDIF}
 
 type
   TRadioPCMBuffer = class

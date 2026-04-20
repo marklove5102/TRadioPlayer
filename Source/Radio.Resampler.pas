@@ -3,7 +3,11 @@ unit Radio.Resampler;
 interface
 
 uses
+{$IFDEF FPC}
+  SysUtils,
+{$ELSE}
   System.SysUtils,
+{$ENDIF}
   libavcodec,
   libavutil,
   libavutil_channel_layout,

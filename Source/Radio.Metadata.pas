@@ -3,7 +3,11 @@ unit Radio.Metadata;
 interface
 
 uses
+{$IFDEF FPC}
+  SysUtils,
+{$ELSE}
   System.SysUtils,
+{$ENDIF}
   Radio.Types;
 
 function StreamMetadataEquals(const A, B: TStreamMetadata): Boolean;

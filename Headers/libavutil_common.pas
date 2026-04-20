@@ -63,10 +63,14 @@ interface
 {$I CompilerDefines.inc}
 
 uses
-{$IFDEF VCL_XE2_OR_ABOVE}
-  System.SysUtils;
-{$ELSE}
+{$IFDEF FPC}
   SysUtils;
+{$ELSE}
+  {$IFDEF VCL_XE2_OR_ABOVE}
+  System.SysUtils;
+  {$ELSE}
+  SysUtils;
+  {$ENDIF}
 {$ENDIF}
 
 {$I libversion.inc}

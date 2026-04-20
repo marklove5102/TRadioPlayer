@@ -70,10 +70,14 @@ interface
 {$ENDIF}
 
 uses
-{$IFDEF VCL_XE2_OR_ABOVE}
-  System.Math;
-{$ELSE}
+{$IFDEF FPC}
   Math;
+{$ELSE}
+  {$IFDEF VCL_XE2_OR_ABOVE}
+  System.Math;
+  {$ELSE}
+  Math;
+  {$ENDIF}
 {$ENDIF}
 
 {$I libversion.inc}
